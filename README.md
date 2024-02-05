@@ -2,7 +2,7 @@
 Scripts to help convert videos and subtitles to a valid format for android, web, & chromecast
 
 > [!Important]
-> Requires you to have ffmpeg installed.
+> You must have ffmpeg installed.
 
 Reformat
 -----
