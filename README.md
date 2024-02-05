@@ -1,6 +1,9 @@
 # FlixBox Scripts
 Scripts to help convert videos and subtitles to a valid format for android, web, & chromecast
 
+> [!Important]
+> Requires you to have ffmpeg installed.
+
 Reformat
 -----
 Reformat will format MP4, AVI, & MKV. It will format so that the following is correct:
