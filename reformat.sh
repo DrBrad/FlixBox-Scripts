@@ -45,7 +45,7 @@ verify(){
 
     if [ "$video_codec" != "h264" ]; then
         echo -e "\033[31mVideo Codec is not valid.\033[0m"
-        exit 2
+        return 2
     fi
 
     if [ "$video_profile" != "High" ]; then
