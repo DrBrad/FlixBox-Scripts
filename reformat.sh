@@ -7,41 +7,12 @@ verify(){
 
     video_codec=$(echo "$video_info" | head -n 1)
     video_profile=$(echo "$video_info" | head -n 2 | tail -n 1)
-    width=$(echo "$video_info" | head -n 3 | tail -n 1)
-    height=$(echo "$video_info" | head -n 4 | tail -n 1)
     video_level=$(echo "$video_info" | head -n 5 | tail -n 1)
     fps=$(echo "$video_info" | head -n 6 | tail -n 1)
 
     audio_codec=$(echo "$audio_info" | head -n 1)
     audio_profile=$(echo "$audio_info" | head -n 2 | tail -n 1)
     channels=$(echo "$audio_info" | head -n 3 | tail -n 1)
-
-    def=( 720 1280 1920 3840 )
-
-    ckey=""
-
-    for key in "${!def[@]}"; do
-        if [ -z "$ckey" ] || [ $((def[$ckey] - "$width")) -gt $(("$width" - def[$key])) ]; then
-            ckey="$key"
-        fi
-    done
-
-    fps_numerator=$(echo "$fps" | cut -d '/' -f 1)
-    fps_denominator=$(echo "$fps" | cut -d '/' -f 2)
-    fps_integer=$((fps_numerator / fps_denominator))
-
-    if [ $ckey -gt 0 ]; then
-        ckey="30";
-    
-    else
-        ckey="60";
-    fi
-
-    if [ "$fps_integer" -gt $ckey ]; then
-        echo -e "\033[31mVideo FPS is greater than 30.\033[0m"
-        return 2
-    fi
-
 
     if [ "$video_codec" != "h264" ]; then
         echo -e "\033[31mVideo Codec is not valid.\033[0m"
@@ -82,36 +53,106 @@ verify(){
     return 0;
 }
 
+check_fps(){
+    local video=$1
+    echo ${video}
+    format_info=$(ffprobe -v error -show_entries format=format_name,bit_rate -of default=nw=1:nk=1 "$video")
+    video_info=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,profile,coded_width,coded_height,level,r_frame_rate -of default=nw=1:nk=1 "$video")
+
+    width=$(echo "$video_info" | head -n 3 | tail -n 1)
+    height=$(echo "$video_info" | head -n 4 | tail -n 1)
+    fps=$(echo "$video_info" | head -n 6 | tail -n 1)
+
+    def=( 720 1280 1920 3840 )
+
+    ckey=0
+
+    for key in "${!def[@]}"; do
+        if [ -z "$ckey" ] || [ $(("$width" - def[$key])) -gt $((def[$ckey] - "$width")) ]; then
+            ckey="$key"
+        fi
+    done
+
+    fps_numerator=$(echo "$fps" | cut -d '/' -f 1)
+    fps_denominator=$(echo "$fps" | cut -d '/' -f 2)
+    fps_integer=$((fps_numerator / fps_denominator))
+    
+    echo "key "$ckey;
+    fps=""
+
+    if [ $ckey -gt 0 ]; then
+        fps="30";
+    
+    else
+        fps="60";
+    fi
+    
+    echo $fps
+    
+    if [ "$fps_integer" -gt $fps ]; then
+    	return $fps;
+    fi
+    
+    return 0;
+}
+
 mkdir "converted"
 
 for file in *.mp4*
 do
-    verify "$file"
-    exit_status=$?
+	if [[ -f ${file} ]]
+	then
+		verify "$file"
+		verify_status=$?
+		
+		check_fps "$file"
+		fps_status=$?
 
-    if [ $exit_status -eq 0 ]; then
-        mv "$file" "converted/$file"
-        
-    elif [ $exit_status -eq 1 ]; then
-        ffmpeg -y -i "$file" -c:v copy -c:a aac -ac 2 -ab 256k "converted/$file"
-    
-    elif [ $exit_status -eq 2 ]; then
-        ffmpeg -y -i "$file" -vcodec libx264 -profile:v high -level:v 4.1 -pix_fmt yuv420p -c:a aac -ac 2 -ab 256k "converted/$file"
-    else
-        echo -e "\033[32mUnknown type response.\033[0m"
-    fi
+		if [ $verify_status -eq 0 ]; then
+			if [ $fps_status -eq 0 ]; then
+				mv "$file" "converted/$file"
+			else
+				ffmpeg -y -i "$file" -r $fps "converted/$file"
+			fi
+					
+		elif [ $verify_status -eq 1 ]; then
+			if [ $fps_status -eq 0 ]; then
+				ffmpeg -y -i "$file" -c:v copy -c:a aac -ac 2 -ab 256k "converted/$file"
+			else
+				ffmpeg -y -i "$file" -r $fps -c:a aac -ac 2 -ab 256k "converted/$file"
+			fi
+	    
+		elif [ $verify_status -eq 2 ]; then
+			if [ $fps_status -eq 0 ]; then
+				ffmpeg -y -i "$file" -vcodec libx264 -profile:v high -level:v 4.1 -pix_fmt yuv420p -c:a aac -ac 2 -ab 256k "converted/$file"
+			else
+				ffmpeg -y -i "$file" -r $fps -vcodec libx264 -profile:v high -level:v 4.1 -pix_fmt yuv420p -c:a aac -ac 2 -ab 256k "converted/$file"
+			fi
+		else
+			echo -e "\033[32mUnknown type response.\033[0m"
+		fi
+	fi
 done
 
-for file in *.avi*
-do
-	echo $file
-	ffmpeg -y -i "$file" -vcodec libx264 -profile:v high -level:v 4.1 -pix_fmt yuv420p -c:a aac -ac 2 -ab 256k "converted/${file%.*}.mp4"
-done
+types=( mkv MKV avi AVI vob VOB )
 
-for file in *.mkv*
+for type in "${types[@]}"
 do
-	echo $file
-	ffmpeg -y -i "$file" -vcodec libx264 -profile:v high -level:v 4.1 -pix_fmt yuv420p -c:a aac -ac 2 -ab 256k "converted/${file%.*}.mp4"
+	for file in *."${type}"
+	do
+		if [[ -f $file ]]; then
+    	
+			check_fps "$file"
+	    		fps_status=$?
+
+			if [ $fps_status -eq 0 ]; then
+				ffmpeg -y -i "$file" -vcodec libx264 -profile:v high -level:v 4.1 -pix_fmt yuv420p -c:a aac -ac 2 -ab 256k "converted/${file%.*}.mp4"
+			
+			else
+				ffmpeg -y -i "$file" -r $fps -vcodec libx264 -profile:v high -level:v 4.1 -pix_fmt yuv420p -c:a aac -ac 2 -ab 256k "converted/${file%.*}.mp4"
+			fi
+		fi
+	done
 done
 
 echo -en "\007"
